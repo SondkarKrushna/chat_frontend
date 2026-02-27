@@ -3,7 +3,7 @@ import { io } from "socket.io-client";
 let socket = null;
 
 export const connectSocket = (token) => {
-  socket = io("http://localhost:5000", {
+  socket = io("https://chat-frontend-green-tau.vercel.app/", {
     auth: {
       token,
     },
