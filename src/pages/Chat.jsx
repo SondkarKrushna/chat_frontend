@@ -31,7 +31,7 @@ export default function Chat() {
     const fetchMessages = async () => {
       try {
         const res = await axios.get(
-          `http://localhost:5000/api/messages/${activeUser._id}`,
+          `https://chat-backend-abdz.onrender.com/api/messages/${activeUser._id}`,
           {
             headers: {
               Authorization: `Bearer ${user.token}`,
