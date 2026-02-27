@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { FaWhatsapp, FaArrowLeft } from "react-icons/fa";
 import { useNavigate } from "react-router-dom";
 import { useGetAllUsersQuery } from "../features/Users/userApi";
-import { getSocket } from "../socket";
+import { getSocket, connectSocket } from "../socket";
 import axios from "axios";
 
 export default function Chat() {
@@ -48,21 +48,28 @@ export default function Chat() {
     fetchMessages();
   }, [activeUser]);
 
+  useEffect(() => {
+    if (!user?.token) return;
+
+    const socketInstance = connectSocket(user.token);
+
+    socketInstance.on("connect", () => {
+      console.log("Socket connected:", socketInstance.id);
+    });
+
+    return () => {
+      socketInstance.disconnect();
+    };
+  }, []);
+
   /* ================= SOCKET LISTENER ================= */
 
   useEffect(() => {
     const socketInstance = getSocket();
-
-    if (!socketInstance) {
-      console.log("Socket not ready yet");
-      return;
-    }
-
-    console.log("Socket connected:", socketInstance.id);
+    if (!socketInstance) return;
 
     socketInstance.on("receiveMessage", (message) => {
       console.log("Received:", message);
-
       setMessages((prev) => [...prev, message]);
     });
 
