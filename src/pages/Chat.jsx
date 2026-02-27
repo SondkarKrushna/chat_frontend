@@ -8,7 +8,7 @@ import axios from "axios";
 export default function Chat() {
   const { data: users = [], isLoading, error } = useGetAllUsersQuery();
   const [socketInstance, setSocketInstance] = useState(null);
-const [isConnected, setIsConnected] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
 
   const navigate = useNavigate();
 
@@ -198,24 +198,26 @@ const [isConnected, setIsConnected] = useState(false);
 
             {/* Messages */}
             <div className="flex-1 p-4 overflow-y-auto space-y-3">
-              {messages.map((msg) => (
-                <div
-                  key={msg._id}
-                  className={`flex ${msg.sender === user._id
-                    ? "justify-end"
-                    : "justify-start"
-                    }`}
-                >
+              {messages.map((msg) => {
+                const isMe =
+                  msg.sender?._id === user._id || msg.sender === user._id;
+
+                return (
                   <div
-                    className={`px-4 py-2 rounded-2xl max-w-[75%] ${msg.sender === user._id
-                      ? "bg-green-600 rounded-br-none"
-                      : "bg-[#202c33] rounded-bl-none"
-                      }`}
+                    key={msg._id}
+                    className={`flex ${isMe ? "justify-end" : "justify-start"}`}
                   >
-                    {msg.message}
+                    <div
+                      className={`px-4 py-2 rounded-2xl max-w-[75%] ${isMe
+                          ? "bg-green-600 rounded-br-none"
+                          : "bg-[#202c33] rounded-bl-none"
+                        }`}
+                    >
+                      {msg.message}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Input */}
