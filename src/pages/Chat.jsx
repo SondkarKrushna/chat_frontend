@@ -21,6 +21,7 @@ export default function Chat() {
   const [isTyping, setIsTyping] = useState(false);
   const [typingTimeout, setTypingTimeout] = useState(null);
   const [onlineUsers, setOnlineUsers] = useState([]);
+  const [lastMessages, setLastMessages] = useState({});
 
   useEffect(() => {
     if (!token) navigate("/");
@@ -63,24 +64,83 @@ export default function Chat() {
   }, [activeUser, token]);
 
   useEffect(() => {
-    if (!socketInstance || !activeUser) return;
+    if (!users.length || !token) return;
+
+    const fetchLastMessages = async () => {
+      try {
+        const results = await Promise.all(
+          users.map(async (user) => {
+            if (user._id === loggedUserId) return null;
+
+            const res = await axios.get(
+              `https://chat-backend-abdz.onrender.com/api/messages/${user._id}`,
+              {
+                headers: { Authorization: `Bearer ${token}` },
+              }
+            );
+
+            const messages = res.data;
+            if (!messages.length) return null;
+
+            const lastMessage = messages[messages.length - 1];
+
+            return {
+              userId: user._id,
+              lastMessage,
+            };
+          })
+        );
+
+        const mapped = {};
+        results.forEach((item) => {
+          if (item) {
+            mapped[item.userId] = item.lastMessage;
+          }
+        });
+
+        setLastMessages(mapped);
+      } catch (err) {
+        console.error("Failed to fetch last messages", err);
+      }
+    };
+
+    fetchLastMessages();
+  }, [users, token, loggedUserId]);
+
+  useEffect(() => {
+    if (!socketInstance) return;
 
     const handleReceiveMessage = (message) => {
       const senderId = message.sender?._id || message.sender;
       const receiverId = message.receiver?._id || message.receiver;
 
-      const isMessageForThisChat =
-        (senderId === loggedUserId && receiverId === activeUser._id) ||
-        (senderId === activeUser._id && receiverId === loggedUserId);
+      const otherUserId =
+        senderId === loggedUserId ? receiverId : senderId;
 
-      if (isMessageForThisChat) {
-        setMessages((prev) => {
-          if (prev.some((m) => m._id === message._id)) return prev;
-          return [...prev, message];
-        });
+      // ✅ Update last message for sidebar
+      setLastMessages((prev) => ({
+        ...prev,
+        [otherUserId]: message,
+      }));
+
+      // ✅ Update active chat messages
+      if (activeUser) {
+        const isMessageForThisChat =
+          (senderId === loggedUserId &&
+            receiverId === activeUser._id) ||
+          (senderId === activeUser._id &&
+            receiverId === loggedUserId);
+
+        if (isMessageForThisChat) {
+          setMessages((prev) => {
+            if (prev.some((m) => m._id === message._id))
+              return prev;
+            return [...prev, message];
+          });
+        }
       }
     };
-    console.log(activeUser._id);
+
     socketInstance.on("receiveMessage", handleReceiveMessage);
 
     return () => {
@@ -125,10 +185,23 @@ export default function Chat() {
   const sendMessage = () => {
     if (!newMessage.trim() || !activeUser || !socketInstance) return;
 
-    socketInstance.emit("sendMessage", {
+    const messageData = {
       receiverId: activeUser._id,
       message: newMessage,
-    });
+    };
+
+    socketInstance.emit("sendMessage", messageData);
+
+    // Optimistic update for sidebar
+    const tempMessage = {
+      message: newMessage,
+      createdAt: new Date().toISOString(),
+    };
+
+    setLastMessages((prev) => ({
+      ...prev,
+      [activeUser._id]: tempMessage,
+    }));
 
     setNewMessage("");
   };
@@ -143,7 +216,16 @@ export default function Chat() {
     .filter((user) => user._id !== loggedUserId)
     .filter((user) =>
       user.name?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    )
+    .sort((a, b) => {
+      const aLast = lastMessages[a._id]?.createdAt;
+      const bLast = lastMessages[b._id]?.createdAt;
+
+      if (!aLast) return 1;
+      if (!bLast) return -1;
+
+      return new Date(bLast) - new Date(aLast);
+    });
 
   const formatTime = (date) => {
     if (!date) return "";
@@ -164,47 +246,85 @@ export default function Chat() {
             <h2 className="font-semibold">ChatApp</h2>
           </div>
 
-          <div className="w-8 h-8 flex items-center justify-center rounded-full bg-green-600 font-semibold">
-            {loggedUser?.name?.charAt(0).toUpperCase()}
+          <div
+            onClick={() => navigate(`/profile/${loggedUserId}`)}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-green-600 font-semibold cursor-pointer"
+          >
+            {loggedUser?.user?.name?.charAt(0)?.toUpperCase() ||
+              loggedUser?.name?.charAt(0)?.toUpperCase()}
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
-          {filteredUsers.map((u) => {
-            const isOnline = onlineUsers.includes(u._id);
+        <div className="flex flex-col h-full">
 
-            return (
-              <div
-                key={u._id}
-                onClick={() => navigate(`/chat/${u._id}`)}
-                className={`p-4 cursor-pointer border-b border-gray-800 hover:bg-[#202c33] transition flex items-center gap-3 ${userId === u._id ? "bg-[#202c33]" : ""
-                  }`}
-              >
-                {/* Avatar with online dot */}
-                <div className="relative">
-                  <div className="w-10 h-10 flex items-center justify-center rounded-full bg-green-600 font-semibold">
-                    {u.name.charAt(0).toUpperCase()}
+          {/* Scrollable Users List */}
+          <div className="flex-1 overflow-y-auto">
+            {filteredUsers.map((u) => {
+              const isOnline = onlineUsers.includes(u._id);
+
+              return (
+                <div
+                  key={u._id}
+                  onClick={() => navigate(`/chat/${u._id}`)}
+                  className={`p-4 cursor-pointer border-b border-gray-800 hover:bg-[#202c33] transition flex items-center gap-3 ${userId === u._id ? "bg-[#202c33]" : ""
+                    }`}
+                >
+                  {/* Avatar */}
+                  <div className="relative">
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/profile/${u._id}`);
+                      }}
+                      className="w-10 h-10 flex items-center justify-center rounded-full bg-green-600 font-semibold cursor-pointer hover:scale-105 transition"
+                    >
+                      {u.name.charAt(0).toUpperCase()}
+                    </div>
+
+                    {isOnline && (
+                      <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 border-2 border-[#111b21] rounded-full"></span>
+                    )}
                   </div>
 
-                  {isOnline && (
-                    <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 border-2 border-[#111b21] rounded-full"></span>
-                  )}
-                </div>
+                  {/* Name + Message + Time */}
+                  <div className="flex flex-1 justify-between items-start">
+                    <div className="flex flex-col min-w-0">
+                      <span className="font-medium">{u.name}</span>
 
-                {/* Name + Status */}
-                <div className="flex flex-col">
-                  <span className="font-medium">{u.name}</span>
-                  <span className={`text-xs ${isOnline ? "text-green-400" : "text-gray-400"}`}>
-                    {isOnline ? "Online" : "Offline"}
-                  </span>
+                      <span className="text-xs text-gray-400 truncate max-w-[160px]">
+                        {lastMessages[u._id]?.message
+                          ? lastMessages[u._id].message
+                          : isOnline
+                            ? "Online"
+                            : "Offline"}
+                      </span>
+                    </div>
+
+                    {lastMessages[u._id]?.createdAt && (
+                      <span className="text-[10px] text-gray-500 whitespace-nowrap ml-2">
+                        {formatTime(lastMessages[u._id].createdAt)}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
+
+          {/* Logout Section */}
+          <div className="p-4 border-t border-gray-800 bg-[#111b21]">
+            <button
+              onClick={handleLogout}
+              className="w-full bg-red-600 hover:bg-red-700 py-2 rounded-lg text-sm font-medium transition"
+            >
+              Logout
+            </button>
+          </div>
+
         </div>
       </div>
 
-      <div className={`flex flex-col flex-1 ${!activeUser ? "hidden md:flex" : "flex"}`}>
+      <div className={`flex flex-col flex-1 relative ${!activeUser ? "hidden md:flex" : "flex"}`}>
         {activeUser ? (
           <>
             <div className="bg-[#202c33] p-4 flex items-center gap-3 border-b border-gray-700">
@@ -216,8 +336,13 @@ export default function Chat() {
                 {activeUser.name.charAt(0).toUpperCase()}
               </div>
 
-              <div>
-                <h2 className="font-semibold text-lg">{activeUser.name}</h2>
+              <div
+                className="cursor-pointer"
+                onClick={() => navigate(`/profile/${activeUser._id}`)}
+              >
+                <h2 className="font-semibold text-lg hover:underline">
+                  {activeUser.name}
+                </h2>
 
                 <p className="text-xs text-gray-400">
                   {onlineUsers.includes(activeUser._id) ? (
@@ -227,16 +352,9 @@ export default function Chat() {
                   )}
                 </p>
               </div>
-
-              <button
-                onClick={handleLogout}
-                className="ml-auto bg-red-600 hover:bg-red-700 px-4 py-1 rounded-full text-sm"
-              >
-                Logout
-              </button>
             </div>
 
-            <div className="flex-1 p-4 overflow-y-auto space-y-3">
+            <div className="flex-1 p-4 pb-24 overflow-y-auto space-y-3">
 
               {messages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-center text-gray-400">
@@ -260,14 +378,21 @@ export default function Chat() {
                         className={`flex ${isMe ? "justify-end" : "justify-start"}`}
                       >
                         <div
-                          className={`px-4 py-2 rounded-2xl max-w-[75%] ${isMe
-                            ? "bg-green-600 rounded-br-none"
-                            : "bg-[#202c33] rounded-bl-none"
-                            }`}
+                          className={`
+                              px-3 py-1.5 md:px-4 md:py-2
+                              rounded-2xl
+                              max-w-[85%] md:max-w-[75%]
+                              text-sm md:text-base
+                              break-words
+                              ${isMe
+                              ? "bg-green-600 rounded-br-none"
+                              : "bg-[#202c33] rounded-bl-none"
+                            }
+                          `}
                         >
                           <div>{msg.message}</div>
                           <div
-                            className={`text-xs mt-1 text-right ${isMe ? "text-green-200" : "text-gray-400"
+                            className={`text-[10px] md:text-xs mt-1 text-right ${isMe ? "text-green-200" : "text-gray-400"
                               }`}
                           >
                             {formatTime(msg.createdAt)}
@@ -279,7 +404,7 @@ export default function Chat() {
 
                   {isTyping && (
                     <div className="flex justify-start">
-                      <div className="bg-[#202c33] px-4 py-3 rounded-2xl rounded-bl-none">
+                      <div className="bg-[#202c33] px-3 py-2 md:px-4 md:py-3 rounded-2xl rounded-bl-none">
                         <div className="flex items-center gap-1">
                           <span className="typing-dot"></span>
                           <span className="typing-dot"></span>
@@ -293,11 +418,11 @@ export default function Chat() {
 
             </div>
 
-            <div className="p-3 bg-[#202c33] flex gap-3 items-center">
+            <div className="absolute bottom-0 left-0 right-0 p-2 md:p-3 bg-[#202c33] flex gap-2 md:gap-3 items-center">
               <input
                 type="text"
                 placeholder="Type a message"
-                className="flex-1 bg-[#2a3942] px-4 py-2 rounded-full focus:outline-none"
+                className="flex-1 bg-[#2a3942] px-3 py-1.5 md:px-4 md:py-2 rounded-full focus:outline-none text-sm md:text-base"
                 value={newMessage}
                 onChange={(e) => {
                   setNewMessage(e.target.value);
@@ -324,7 +449,7 @@ export default function Chat() {
               />
               <button
                 onClick={sendMessage}
-                className="bg-green-600 hover:bg-green-700 px-5 py-2 rounded-full"
+                className="bg-green-600 hover:bg-green-700 px-4 py-1.5 md:px-5 md:py-2 rounded-full text-sm md:text-base"
               >
                 Send
               </button>
