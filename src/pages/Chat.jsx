@@ -233,6 +233,28 @@ export default function Chat() {
     return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   };
 
+  const formatMessageDate = (date) => {
+    const messageDate = new Date(date);
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+
+    const isToday =
+      messageDate.toDateString() === today.toDateString();
+
+    const isYesterday =
+      messageDate.toDateString() === yesterday.toDateString();
+
+    if (isToday) return "Today";
+    if (isYesterday) return "Yesterday";
+
+    return messageDate.toLocaleDateString([], {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
   return (
     <div className="h-screen flex bg-[#0b141a] text-white">
       <div
@@ -315,8 +337,7 @@ export default function Chat() {
           <div className="p-4 border-t border-gray-800 bg-[#111b21]">
             <button
               onClick={handleLogout}
-              className="w-full bg-red-600 hover:bg-red-700 py-2 rounded-lg text-sm font-medium transition"
-            >
+              className="w-full bg-red-600 hover:bg-red-700 py-2 rounded-lg text-sm font-medium transition">
               Logout
             </button>
           </div>
@@ -368,37 +389,56 @@ export default function Chat() {
                 </div>
               ) : (
                 <>
-                  {messages.map((msg) => {
+                  {messages.map((msg, index) => {
                     const senderId = msg.sender?._id || msg.sender;
                     const isMe = senderId === loggedUserId;
 
+                    const currentDate = new Date(msg.createdAt).toDateString();
+                    const prevDate =
+                      index > 0
+                        ? new Date(messages[index - 1].createdAt).toDateString()
+                        : null;
+
+                    const showDateSeparator = currentDate !== prevDate;
+
                     return (
-                      <div
-                        key={msg._id}
-                        className={`flex ${isMe ? "justify-end" : "justify-start"}`}
-                      >
+                      <React.Fragment key={msg._id}>
+                        {/* ✅ Date Separator */}
+                        {showDateSeparator && (
+                          <div className="flex justify-center my-4">
+                            <div className="bg-[#1f2c34] text-gray-300 text-xs px-3 py-1 rounded-full shadow">
+                              {formatMessageDate(msg.createdAt)}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* ✅ Message Bubble */}
                         <div
-                          className={`
-                              px-3 py-1.5 md:px-4 md:py-2
-                              rounded-2xl
-                              max-w-[85%] md:max-w-[75%]
-                              text-sm md:text-base
-                              break-words
-                              ${isMe
-                              ? "bg-green-600 rounded-br-none"
-                              : "bg-[#202c33] rounded-bl-none"
-                            }
-                          `}
+                          className={`flex ${isMe ? "justify-end" : "justify-start"}`}
                         >
-                          <div>{msg.message}</div>
                           <div
-                            className={`text-[10px] md:text-xs mt-1 text-right ${isMe ? "text-green-200" : "text-gray-400"
-                              }`}
+                            className={`
+                                px-3 py-1.5 md:px-4 md:py-2
+                                rounded-2xl
+                                max-w-[85%] md:max-w-[75%]
+                                text-sm md:text-base
+                                break-words
+                                ${isMe
+                                ? "bg-green-600 rounded-br-none"
+                                : "bg-[#202c33] rounded-bl-none"
+                              }
+                            `}
                           >
-                            {formatTime(msg.createdAt)}
+                            <div>{msg.message}</div>
+                            <div
+                              className={`text-[10px] md:text-xs mt-1 text-right ${isMe ? "text-green-200" : "text-gray-400"
+                                }`}
+                            >
+                              {formatTime(msg.createdAt)}
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      </React.Fragment>
                     );
                   })}
 
